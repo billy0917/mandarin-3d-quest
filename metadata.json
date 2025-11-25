@@ -1,0 +1,5 @@
+{
+  "name": "Mandarin 3D Quest",
+  "description": "A 3D immersive web game for learning Mandarin Pinyin and tones using A-Frame.",
+  "requestFramePermissions": []
+}
