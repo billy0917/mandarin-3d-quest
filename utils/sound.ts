@@ -8,6 +8,12 @@ let audioUnlocked = false;
 // Azure Speech synthesizer (singleton)
 let speechSynthesizer: SpeechSDK.SpeechSynthesizer | null = null;
 
+// Detect if running on iOS
+const isIOS = () => {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+};
+
 // Initialize Azure Speech Synthesizer with Mandarin Chinese voice
 const initAzureSpeech = () => {
   if (speechSynthesizer) return speechSynthesizer;
@@ -30,7 +36,15 @@ const initAzureSpeech = () => {
   // - zh-TW-YunJheNeural (male, Taiwan Mandarin)
   speechConfig.speechSynthesisVoiceName = 'zh-CN-XiaoxiaoNeural';
   
-  const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+  // For iOS Safari compatibility, use null audio config
+  // We'll handle audio playback manually
+  let audioConfig;
+  if (isIOS()) {
+    audioConfig = null; // Will return audio data instead of playing
+  } else {
+    audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+  }
+  
   speechSynthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
   
   return speechSynthesizer;
@@ -86,20 +100,55 @@ export const speakMandarin = async (text: string) => {
     return;
   }
 
-  // Use Azure Neural TTS to speak the text
-  synthesizer.speakTextAsync(
-    text,
-    (result) => {
-      if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
-        console.log('✓ Azure TTS completed:', text);
-      } else {
-        console.error('✗ Azure TTS failed:', result.errorDetails);
+  // iOS Safari requires special handling
+  if (isIOS()) {
+    // For iOS: Get audio data and play via HTML5 Audio element
+    synthesizer.speakTextAsync(
+      text,
+      (result) => {
+        if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+          console.log('✓ Azure TTS completed:', text);
+          
+          // Convert audio data to blob and play
+          const audioData = result.audioData;
+          const blob = new Blob([audioData], { type: 'audio/wav' });
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          
+          audio.play().then(() => {
+            console.log('✓ iOS audio playback started');
+          }).catch((err) => {
+            console.error('✗ iOS audio playback failed:', err);
+          });
+          
+          // Clean up after playback
+          audio.onended = () => {
+            URL.revokeObjectURL(url);
+          };
+        } else {
+          console.error('✗ Azure TTS failed:', result.errorDetails);
+        }
+      },
+      (error) => {
+        console.error('✗ Azure TTS error:', error);
       }
-    },
-    (error) => {
-      console.error('✗ Azure TTS error:', error);
-    }
-  );
+    );
+  } else {
+    // Non-iOS: Direct playback through Azure SDK
+    synthesizer.speakTextAsync(
+      text,
+      (result) => {
+        if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+          console.log('✓ Azure TTS completed:', text);
+        } else {
+          console.error('✗ Azure TTS failed:', result.errorDetails);
+        }
+      },
+      (error) => {
+        console.error('✗ Azure TTS error:', error);
+      }
+    );
+  }
 };
 
 // Play success sound effect using Web Audio API
