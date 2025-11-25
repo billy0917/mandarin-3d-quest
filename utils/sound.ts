@@ -5,8 +5,8 @@ import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 let globalAudioContext: AudioContext | null = null;
 let audioUnlocked = false;
 
-// Azure Speech synthesizer (singleton)
-let speechSynthesizer: SpeechSDK.SpeechSynthesizer | null = null;
+// Track current audio playback for immediate cancellation
+let currentAudio: HTMLAudioElement | null = null;
 
 // Detect if running on iOS
 const isIOS = () => {
@@ -14,10 +14,8 @@ const isIOS = () => {
          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 };
 
-// Initialize Azure Speech Synthesizer with Mandarin Chinese voice
-const initAzureSpeech = () => {
-  if (speechSynthesizer) return speechSynthesizer;
-
+// Get Azure Speech Config (create fresh each time to avoid queuing)
+const getAzureSpeechConfig = () => {
   const subscriptionKey = import.meta.env.VITE_AZURE_SPEECH_KEY as string;
   const region = import.meta.env.VITE_AZURE_SPEECH_REGION as string;
 
@@ -29,25 +27,9 @@ const initAzureSpeech = () => {
   const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionKey, region);
   
   // High-quality Mandarin Chinese neural voice
-  // Available voices:
-  // - zh-CN-XiaoxiaoNeural (female, mainland Chinese)
-  // - zh-CN-YunxiNeural (male, mainland Chinese)
-  // - zh-TW-HsiaoChenNeural (female, Taiwan Mandarin)
-  // - zh-TW-YunJheNeural (male, Taiwan Mandarin)
   speechConfig.speechSynthesisVoiceName = 'zh-CN-XiaoxiaoNeural';
   
-  // For iOS Safari compatibility, use null audio config
-  // We'll handle audio playback manually
-  let audioConfig;
-  if (isIOS()) {
-    audioConfig = null; // Will return audio data instead of playing
-  } else {
-    audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
-  }
-  
-  speechSynthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
-  
-  return speechSynthesizer;
+  return speechConfig;
 };
 
 // Initialize and unlock audio context (must be called from user interaction)
@@ -76,9 +58,6 @@ export const unlockAudio = async (): Promise<boolean> => {
     oscillator.start(0);
     oscillator.stop(globalAudioContext.currentTime + 0.1);
 
-    // Initialize Azure Speech SDK
-    initAzureSpeech();
-
     audioUnlocked = true;
     return true;
   } catch (e) {
@@ -87,18 +66,40 @@ export const unlockAudio = async (): Promise<boolean> => {
   }
 };
 
-// Speak Chinese text using Azure TTS
+// Stop any currently playing audio
+const stopCurrentAudio = () => {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+};
+
+// Speak Chinese text using Azure TTS (creates new synthesizer each time to avoid queuing)
 export const speakMandarin = async (text: string) => {
   if (!audioUnlocked) {
     await unlockAudio();
   }
 
-  const synthesizer = initAzureSpeech();
+  // Stop any currently playing audio immediately
+  stopCurrentAudio();
+
+  const speechConfig = getAzureSpeechConfig();
   
-  if (!synthesizer) {
-    console.error('Azure Speech Synthesizer not available - check environment variables');
+  if (!speechConfig) {
+    console.error('Azure Speech config not available - check environment variables');
     return;
   }
+
+  // Create a fresh synthesizer for each call to avoid queuing issues
+  let audioConfig;
+  if (isIOS()) {
+    audioConfig = null; // Will return audio data for manual playback
+  } else {
+    audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+  }
+  
+  const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
 
   // iOS Safari requires special handling
   if (isIOS()) {
@@ -109,11 +110,14 @@ export const speakMandarin = async (text: string) => {
         if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
           console.log('✓ Azure TTS completed:', text);
           
-          // Convert audio data to blob and play
+          // Convert audio data to blob and play immediately
           const audioData = result.audioData;
           const blob = new Blob([audioData], { type: 'audio/wav' });
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
+          
+          // Track current audio for cancellation
+          currentAudio = audio;
           
           audio.play().then(() => {
             console.log('✓ iOS audio playback started');
@@ -124,13 +128,19 @@ export const speakMandarin = async (text: string) => {
           // Clean up after playback
           audio.onended = () => {
             URL.revokeObjectURL(url);
+            if (currentAudio === audio) {
+              currentAudio = null;
+            }
           };
         } else {
           console.error('✗ Azure TTS failed:', result.errorDetails);
         }
+        // Clean up synthesizer
+        synthesizer.close();
       },
       (error) => {
         console.error('✗ Azure TTS error:', error);
+        synthesizer.close();
       }
     );
   } else {
@@ -143,9 +153,12 @@ export const speakMandarin = async (text: string) => {
         } else {
           console.error('✗ Azure TTS failed:', result.errorDetails);
         }
+        // Clean up synthesizer
+        synthesizer.close();
       },
       (error) => {
         console.error('✗ Azure TTS error:', error);
+        synthesizer.close();
       }
     );
   }
