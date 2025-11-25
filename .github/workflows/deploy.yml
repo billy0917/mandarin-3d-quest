@@ -25,6 +25,9 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          VITE_AZURE_SPEECH_KEY: ${{ secrets.VITE_AZURE_SPEECH_KEY }}
+          VITE_AZURE_SPEECH_REGION: ${{ secrets.VITE_AZURE_SPEECH_REGION }}
 
       - name: Upload artifact for deployment
         uses: actions/upload-pages-artifact@v3
