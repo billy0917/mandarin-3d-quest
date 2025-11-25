@@ -43,12 +43,44 @@ export const speakMandarin = async (text: string) => {
     await unlockAudio();
   }
 
-  // Use Google Translate TTS API for natural, accurate Mandarin pronunciation
-  // This is much better than the robotic default browser synthesis
+  // Try Google Translate TTS first (better quality)
   const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=zh-CN&q=${encodeURIComponent(text)}`;
   
   const audio = new Audio(url);
-  audio.play().catch(e => console.error("Audio play failed", e));
+  
+  // If Google TTS fails, fallback to browser SpeechSynthesis
+  audio.play().catch(async (e) => {
+    console.warn("Google TTS failed, falling back to SpeechSynthesis", e);
+    
+    // Fallback: Use browser's built-in SpeechSynthesis
+    if ('speechSynthesis' in window) {
+      try {
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'zh-CN'; // Mandarin Chinese
+        utterance.rate = 0.9; // Slightly slower for clarity
+        utterance.pitch = 1.0;
+        
+        // Try to find a Chinese voice
+        const voices = window.speechSynthesis.getVoices();
+        const chineseVoice = voices.find(v => 
+          v.lang.includes('zh') || 
+          v.name.includes('Chinese') || 
+          v.name.includes('中文')
+        );
+        
+        if (chineseVoice) {
+          utterance.voice = chineseVoice;
+        }
+        
+        window.speechSynthesis.speak(utterance);
+      } catch (synthError) {
+        console.error("SpeechSynthesis also failed", synthError);
+      }
+    }
+  });
 };
 
 export const playCorrectSound = async () => {

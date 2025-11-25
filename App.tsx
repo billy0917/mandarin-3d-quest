@@ -292,8 +292,18 @@ const App: React.FC = () => {
 
   useEffect(() => {
     setIsReady(true);
+    
+    // Load SpeechSynthesis voices (some browsers need this)
     if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.getVoices();
+      // Initial load
+      window.speechSynthesis.getVoices();
+      
+      // Some browsers need the onvoiceschanged event
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = () => {
+          window.speechSynthesis.getVoices();
+        };
+      }
     }
   }, []);
 
