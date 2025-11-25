@@ -1,14 +1,14 @@
 
 import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
-// Global AudioContext singleton for better mobile compatibility
+// Global AudioContext for sound effects
 let globalAudioContext: AudioContext | null = null;
 let audioUnlocked = false;
 
-// Azure Speech synthesizer (lazy init)
+// Azure Speech synthesizer (singleton)
 let speechSynthesizer: SpeechSDK.SpeechSynthesizer | null = null;
 
-// Initialize Azure Speech Synthesizer
+// Initialize Azure Speech Synthesizer with Mandarin Chinese voice
 const initAzureSpeech = () => {
   if (speechSynthesizer) return speechSynthesizer;
 
@@ -22,14 +22,15 @@ const initAzureSpeech = () => {
 
   const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionKey, region);
   
-  // Use high-quality Mandarin Chinese voice (Taiwan accent)
-  // Options: zh-TW-HsiaoChenNeural (female), zh-TW-YunJheNeural (male)
-  // Or mainland: zh-CN-XiaoxiaoNeural (female), zh-CN-YunxiNeural (male)
+  // High-quality Mandarin Chinese neural voice
+  // Available voices:
+  // - zh-CN-XiaoxiaoNeural (female, mainland Chinese)
+  // - zh-CN-YunxiNeural (male, mainland Chinese)
+  // - zh-TW-HsiaoChenNeural (female, Taiwan Mandarin)
+  // - zh-TW-YunJheNeural (male, Taiwan Mandarin)
   speechConfig.speechSynthesisVoiceName = 'zh-CN-XiaoxiaoNeural';
   
-  // Output to speaker
   const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
-  
   speechSynthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
   
   return speechSynthesizer;
@@ -47,7 +48,7 @@ export const unlockAudio = async (): Promise<boolean> => {
       globalAudioContext = new AudioContextClass();
     }
 
-    // Resume context if suspended (required on mobile)
+    // Resume context if suspended (required on mobile browsers)
     if (globalAudioContext.state === 'suspended') {
       await globalAudioContext.resume();
     }
@@ -61,7 +62,7 @@ export const unlockAudio = async (): Promise<boolean> => {
     oscillator.start(0);
     oscillator.stop(globalAudioContext.currentTime + 0.1);
 
-    // Initialize Azure Speech
+    // Initialize Azure Speech SDK
     initAzureSpeech();
 
     audioUnlocked = true;
@@ -72,8 +73,8 @@ export const unlockAudio = async (): Promise<boolean> => {
   }
 };
 
+// Speak Chinese text using Azure TTS
 export const speakMandarin = async (text: string) => {
-  // Ensure audio is unlocked
   if (!audioUnlocked) {
     await unlockAudio();
   }
@@ -81,28 +82,28 @@ export const speakMandarin = async (text: string) => {
   const synthesizer = initAzureSpeech();
   
   if (!synthesizer) {
-    console.error('Azure Speech Synthesizer not available');
+    console.error('Azure Speech Synthesizer not available - check environment variables');
     return;
   }
 
-  // Use Azure TTS to speak
+  // Use Azure Neural TTS to speak the text
   synthesizer.speakTextAsync(
     text,
     (result) => {
       if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
-        console.log('Speech synthesis completed for:', text);
+        console.log('✓ Azure TTS completed:', text);
       } else {
-        console.error('Speech synthesis failed:', result.errorDetails);
+        console.error('✗ Azure TTS failed:', result.errorDetails);
       }
     },
     (error) => {
-      console.error('Error during speech synthesis:', error);
+      console.error('✗ Azure TTS error:', error);
     }
   );
 };
 
+// Play success sound effect using Web Audio API
 export const playCorrectSound = async () => {
-  // Ensure audio is unlocked
   if (!audioUnlocked) {
     await unlockAudio();
   }
@@ -115,17 +116,18 @@ export const playCorrectSound = async () => {
   oscillator.connect(gainNode);
   gainNode.connect(globalAudioContext.destination);
 
-  // A nice high pitched "Ding" (Sine wave)
+  // High-pitched "ding" sound
   oscillator.type = 'sine';
   oscillator.frequency.setValueAtTime(880, globalAudioContext.currentTime); // A5
-  oscillator.frequency.exponentialRampToValueAtTime(1760, globalAudioContext.currentTime + 0.1); // Slide up slightly
+  oscillator.frequency.exponentialRampToValueAtTime(1760, globalAudioContext.currentTime + 0.1);
 
-  // Envelope for the sound (fade out)
+  // Fade out envelope
   gainNode.gain.setValueAtTime(0.5, globalAudioContext.currentTime);
   gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioContext.currentTime + 0.5);
 
   oscillator.start();
   oscillator.stop(globalAudioContext.currentTime + 0.5);
 };
+
 
 
