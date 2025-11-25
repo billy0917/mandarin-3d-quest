@@ -1,7 +1,39 @@
 
+import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
+
 // Global AudioContext singleton for better mobile compatibility
 let globalAudioContext: AudioContext | null = null;
 let audioUnlocked = false;
+
+// Azure Speech synthesizer (lazy init)
+let speechSynthesizer: SpeechSDK.SpeechSynthesizer | null = null;
+
+// Initialize Azure Speech Synthesizer
+const initAzureSpeech = () => {
+  if (speechSynthesizer) return speechSynthesizer;
+
+  const subscriptionKey = import.meta.env.VITE_AZURE_SPEECH_KEY as string;
+  const region = import.meta.env.VITE_AZURE_SPEECH_REGION as string;
+
+  if (!subscriptionKey || !region) {
+    console.error('Azure Speech credentials not found in environment variables');
+    return null;
+  }
+
+  const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionKey, region);
+  
+  // Use high-quality Mandarin Chinese voice (Taiwan accent)
+  // Options: zh-TW-HsiaoChenNeural (female), zh-TW-YunJheNeural (male)
+  // Or mainland: zh-CN-XiaoxiaoNeural (female), zh-CN-YunxiNeural (male)
+  speechConfig.speechSynthesisVoiceName = 'zh-CN-XiaoxiaoNeural';
+  
+  // Output to speaker
+  const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+  
+  speechSynthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
+  
+  return speechSynthesizer;
+};
 
 // Initialize and unlock audio context (must be called from user interaction)
 export const unlockAudio = async (): Promise<boolean> => {
@@ -29,6 +61,9 @@ export const unlockAudio = async (): Promise<boolean> => {
     oscillator.start(0);
     oscillator.stop(globalAudioContext.currentTime + 0.1);
 
+    // Initialize Azure Speech
+    initAzureSpeech();
+
     audioUnlocked = true;
     return true;
   } catch (e) {
@@ -43,44 +78,27 @@ export const speakMandarin = async (text: string) => {
     await unlockAudio();
   }
 
-  // Try Google Translate TTS first (better quality)
-  const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=zh-CN&q=${encodeURIComponent(text)}`;
+  const synthesizer = initAzureSpeech();
   
-  const audio = new Audio(url);
-  
-  // If Google TTS fails, fallback to browser SpeechSynthesis
-  audio.play().catch(async (e) => {
-    console.warn("Google TTS failed, falling back to SpeechSynthesis", e);
-    
-    // Fallback: Use browser's built-in SpeechSynthesis
-    if ('speechSynthesis' in window) {
-      try {
-        // Cancel any ongoing speech
-        window.speechSynthesis.cancel();
-        
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'zh-CN'; // Mandarin Chinese
-        utterance.rate = 0.9; // Slightly slower for clarity
-        utterance.pitch = 1.0;
-        
-        // Try to find a Chinese voice
-        const voices = window.speechSynthesis.getVoices();
-        const chineseVoice = voices.find(v => 
-          v.lang.includes('zh') || 
-          v.name.includes('Chinese') || 
-          v.name.includes('中文')
-        );
-        
-        if (chineseVoice) {
-          utterance.voice = chineseVoice;
-        }
-        
-        window.speechSynthesis.speak(utterance);
-      } catch (synthError) {
-        console.error("SpeechSynthesis also failed", synthError);
+  if (!synthesizer) {
+    console.error('Azure Speech Synthesizer not available');
+    return;
+  }
+
+  // Use Azure TTS to speak
+  synthesizer.speakTextAsync(
+    text,
+    (result) => {
+      if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+        console.log('Speech synthesis completed for:', text);
+      } else {
+        console.error('Speech synthesis failed:', result.errorDetails);
       }
+    },
+    (error) => {
+      console.error('Error during speech synthesis:', error);
     }
-  });
+  );
 };
 
 export const playCorrectSound = async () => {
@@ -109,4 +127,5 @@ export const playCorrectSound = async () => {
   oscillator.start();
   oscillator.stop(globalAudioContext.currentTime + 0.5);
 };
+
 
