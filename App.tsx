@@ -4,6 +4,7 @@ import QuizStation from './components/QuizStation';
 import TeleportPad from './components/TeleportPad';
 import Joystick from './components/Joystick'; // Import Joystick
 import { Vector3, QuizData } from './types';
+import { unlockAudio } from './utils/sound';
 import './components/TouchMove'; // Register the joystick-controls component
 
 // Define the quiz content based on user request
@@ -286,6 +287,8 @@ const App: React.FC = () => {
   const [score, setScore] = useState(0);
   const [cameraPosition, setCameraPosition] = useState<Vector3>({ x: 0, y: 1.6, z: 0 });
   const [isReady, setIsReady] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
+  const [showAudioPrompt, setShowAudioPrompt] = useState(true);
 
   useEffect(() => {
     setIsReady(true);
@@ -293,6 +296,12 @@ const App: React.FC = () => {
         window.speechSynthesis.getVoices();
     }
   }, []);
+
+  const handleStartGame = async () => {
+    const success = await unlockAudio();
+    setAudioReady(success);
+    setShowAudioPrompt(false);
+  };
 
   const handleTeleport = useCallback((targetPos: Vector3) => {
     setCameraPosition({ ...targetPos, y: 1.6 });
@@ -307,6 +316,24 @@ const App: React.FC = () => {
   return (
     <div className="relative w-full h-screen overflow-hidden">
       
+      {/* Audio Unlock Prompt (Mobile Fix) */}
+      {showAudioPrompt && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-gradient-to-br from-orange-500 to-red-600 p-8 rounded-2xl shadow-2xl text-white text-center max-w-md mx-4">
+            <h2 className="text-3xl font-bold mb-4">🎮 準備開始</h2>
+            <p className="text-lg mb-6 opacity-90">
+              點擊下方按鈕開始遊戲並啟用音效
+            </p>
+            <button
+              onClick={handleStartGame}
+              className="bg-white text-orange-600 font-bold text-xl px-8 py-4 rounded-xl hover:bg-orange-100 active:scale-95 transform transition-all shadow-lg pointer-events-auto"
+            >
+              開始遊戲 🚀
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 2D HUD Overlay */}
       <div className="absolute top-0 left-0 w-full p-4 z-10 pointer-events-none">
         <div className="flex justify-between items-start">

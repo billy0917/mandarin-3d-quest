@@ -84,7 +84,7 @@ const Joystick: React.FC = () => {
 
   return (
     <div 
-      className="absolute bottom-8 left-8 w-32 h-32 z-50 select-none touch-none"
+      className="absolute bottom-24 left-8 w-32 h-32 z-50 select-none touch-none"
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
